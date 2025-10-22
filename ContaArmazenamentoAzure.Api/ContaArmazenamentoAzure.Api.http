@@ -1,0 +1,6 @@
+@ContaArmazenamentoAzure.Api_HostAddress = http://localhost:5287
+
+GET {{ContaArmazenamentoAzure.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
