@@ -18,21 +18,103 @@ namespace ContaArmazenamentoAzure.Api.Controllers
 
         public ArquivosController(IConfiguration configuration)
         {
-            _connectionString = configuration.GetValue<string>("AzureBlobStorage");
-            _containerName = configuration.GetValue<string>("AzureBlobContainerName");
+ 
+            _connectionString = configuration.GetValue<string>("AzureContaArmazenamento");
+            _containerName = configuration.GetValue<string>("AzureContaArmazenamentoContainerNome");
+ 
         }
 
         [HttpPost("Carregar")]
-        public IActionResult CarregarArquivo(IFormFile arquivo)
+        public async Task<IActionResult> CarregarArquivo(IFormFile arquivo)
         {
+            //-------------------------------------------------------------
+            //Validar anexo
+            if (arquivo == null || arquivo.Length == 0)
+                return BadRequest("Nenhum arquivo enviado.");
+
+            // Lista de extensões permitidas
+            var extensoesPermitidas = new HashSet<string>
+            {
+                ".jpg", ".jpeg", ".png", ".gif",
+                ".mp4", ".avi", ".mov",
+                ".pdf",
+                ".zip", ".rar"
+            };
+
+
+            // Obtém a extensão do arquivo
+            string extensao = Path.GetExtension(arquivo.FileName)?.ToLower();
+            // Valida se é uma extensão permitida
+            if (string.IsNullOrEmpty(extensao) || !extensoesPermitidas.Contains(extensao))
+                return BadRequest("Tipo de arquivo não permitido.");
+
+
+            //-------------------------------------------------------------
+            //Carrega o conteiner
             BlobContainerClient containerClient = new BlobContainerClient(_connectionString, _containerName);
-            BlobClient blobClient = containerClient.GetBlobClient(arquivo.FileName);
+
+            ////-------------------------------------------------------------
+            ////Validar se existe aktian/Amauri/ImagemAmauri na conta de armazenamento
+            //var resultado = new List<string>();
+            //await foreach (BlobHierarchyItem item in containerClient.GetBlobsByHierarchyAsync(delimiter: "/"))
+            //{
+            //    if (item.IsPrefix)
+            //    {
+            //        Console.WriteLine("Pasta: " + item.Prefix);
+            //        resultado.Add($"[Pasta] {item.Prefix}");
+            //    }
+            //    else
+            //    {
+            //        resultado.Add($"[Arquivo] {item.Blob.Name}");
+            //    }
+            //}
+            //await containerClient.CreateIfNotExistsAsync();
+
+            ////-------------------------------------------------------------
+            //// Verifica se já existe algum blob com esse prefixo
+            // string caminhoPasta = $"{_sessaoRequisicaoHTTP.TenantId}/Imagem";
+            //bool pastaExiste = false;
+            //await foreach (var blobItem in containerClient.GetBlobsAsync(prefix: caminhoPasta))
+            //{
+            //    pastaExiste = true;
+            //}
+
+            // Cria um blob com o caminho completo (prefixo + nome do arquivo)
+
+
+
+            // Define a subpasta com base na extensão
+            string subpasta = extensao switch
+            {
+                ".jpg" or ".jpeg" or ".png" or ".gif" => "Imagem",
+                ".mp4" or ".avi" or ".mov" => "Videos",
+                ".pdf" => "Documentos",
+                ".zip" or ".rar" => "ArquivosCompactados",
+                _ => "Outros"
+            };
+
+            string caminhoPasta = $"Amauri/{subpasta}";
+            string nomeBlob = $"{caminhoPasta}/{arquivo.FileName}";
+
+            //-------------------------------------------------------------
+            //Adicioma o anexo do destino na pasta criada
+            BlobClient blobClient = containerClient.GetBlobClient(nomeBlob);
             using var data = arquivo.OpenReadStream();
             blobClient.Upload(data, new BlobUploadOptions
             {
                 HttpHeaders = new BlobHttpHeaders { ContentType = arquivo.ContentType }
             });
-            return Ok(blobClient.Uri.ToString());
+            var propriedades = await blobClient.GetPropertiesAsync();
+
+            return Ok(new
+            {
+                PastaDestino = caminhoPasta,
+                TipoArquivo = arquivo.ContentType,
+                NomeBlob = blobClient.Name,
+                Uri = blobClient.Uri.ToString(),
+                ETag = propriedades.Value.ETag.ToString(),
+                LastModified = propriedades.Value.LastModified.ToString("o")
+            });
         }
 
 
